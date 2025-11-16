@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vocabulary Practice</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="script.js" defer></script>
+</head>
+<body onload="setupDarkMode()">
+    <header class="header-bar">
+        <a href="index.html" style="text-decoration: none; color: var(--color-secondary-text); font-weight: 600;">&leftarrow; Home</a>
+        <div id="timer-display" class="timer-display">6s</div>
+        <button id="dark-mode-toggle" class="dark-mode-toggle" aria-label="Toggle Dark Mode">&#9790;</button>
+    </header>
+
+    <div class="container">
+        <div id="quiz-container">
+            <div class="progress-container">
+                <div id="progress-bar" class="progress-bar"></div>
+            </div>
+
+            <div class="score-display" id="score-display">Score: 0 | Q: 0/20</div>
+            <div class="card">
+                <div class="question-prompt">Is this a real English word?</div>
+                <div class="main-content-box">
+                    <div id="word-display" class="main-word">...Loading...</div>
+                </div>
+            </div>
+            
+            <button class="btn" id="real-button" onclick="answerQuestion(true)">Real Word</button>
+            <button class="btn btn-red" id="fake-button" onclick="answerQuestion(false)">Fake Word</button>
+        </div>
+
+        <!-- Score/Review Screen (Hidden by default) -->
+        <div id="summary-container" class="card score-summary" style="display: none;">
+            <h2>Season Complete!</h2>
+            <p>You finished the **<span id="summary-difficulty"></span>** Vocabulary Season.</p>
+            <p>Correct Answers: <span id="correct-count"></span> / 20</p>
+            <p>Total Points:</p>
+            <div class="final-score" id="final-score"></div>
+            
+            <hr style="border: none; border-top: 1px solid var(--color-border); margin: 30px 0;">
+            
+            <button class="btn btn-red" id="review-button" onclick="showReviewScreen()">Review Mistakes</button>
+            <button class="btn btn-secondary" style="margin-top: 15px;" onclick="window.location.href='index.html'">Start New Season</button>
+        </div>
+        
+        <!-- Mistakes Review Screen (Hidden by default) -->
+        <div id="review-mistakes-container" class="card" style="display: none;">
+            <h2>Mistake Review</h2>
+            <p style="color: var(--color-duo-red);">Words you missed in this season. Focus on their definitions!</p>
+            <ul id="mistakes-list" class="review-list">
+                <!-- Mistake items will be injected here -->
+            </ul>
+            <button class="btn" onclick="showSummaryScreen()">Back to Summary</button>
+            <button class="btn btn-secondary" style="margin-top: 15px;" onclick="window.location.href='index.html'">Start New Season</button>
+        </div>
+    </div>
+    
+    <!-- Feedback Footer -->
+    <div id="feedback-footer">
+        <div class="feedback-content">
+            <div class="feedback-message" id="footer-message"></div>
+            <button class="btn" style="width: auto; padding: 10px 20px;" onclick="loadNextQuestion()">Next</button>
+        </div>
+    </div>
+
+    <script>
+        let currentItem = null;
+        const difficulty = localStorage.getItem('selectedDifficulty') || 'Beginner';
+
+        document.addEventListener('DOMContentLoaded', () => {
+             if (!window.appData) { console.error("Data script not loaded."); return; }
+            window.resetState();
+            setupQuiz();
+        });
+
+        function setupQuiz() {
+            // 1. Filter and Shuffle Dataset
+            const allVocab = window.appData.getVocabArray();
+            const filtered = allVocab.filter(item => window.appData.getDifficulty(item.word) === difficulty);
+            
+            // Use the shuffled array, taking only the first QUIZ_LENGTH items
+            window.currentQuizArray = window.appData.shuffle(filtered).slice(0, QUIZ_LENGTH);
+            if (window.currentQuizArray.length === 0) {
+                 // Using console.error instead of alert due to sandbox constraint
+                 console.error("Error: No words found for this difficulty. Please try a different level or regenerate data on the home page.");
+                 return;
+            }
+            
+            document.getElementById('summary-difficulty').textContent = difficulty;
+            loadNextQuestion();
+        }
+        
+        function loadNextQuestion() {
+            // Check if season is complete
+            if (window.currentQuestionIndex >= QUIZ_LENGTH) {
+                showSummaryScreen();
+                return;
+            }
+            
+            stopTimer();
+            // Hide Feedback Footer
+            document.getElementById('feedback-footer').classList.remove('visible');
+            
+            // Enable buttons and input
+            document.getElementById('real-button').disabled = false;
+            document.getElementById('fake-button').disabled = false;
+            
+            // Load next item
+            currentItem = window.currentQuizArray[window.currentQuestionIndex];
+            document.getElementById('word-display').textContent = currentItem.word;
+            
+            updateProgressBar();
+            updateScoreDisplay();
+            
+            // Start timer for the new question
+            startTimer(VOCAB_TIMER, () => {
+                // Timeout function
+                showFeedback(false, "Time's up! The correct answer was: " + (currentItem.isReal ? 'Real Word' : 'Fake Word'));
+                playSound('timeout');
+                // Record mistake, but mark it as a timeout
+                window.currentMistakes.push({
+                    word: currentItem.word,
+                    isReal: currentItem.isReal,
+                    definition: currentItem.definition,
+                    wasTimeout: true
+                });
+                // Auto-advance after a timeout pause
+                window.currentQuestionIndex++; 
+                setTimeout(loadNextQuestion, 1500); 
+            });
+        }
+        
+        function answerQuestion(userIsReal) {
+            stopTimer();
+            
+            const isCorrect = userIsReal === currentItem.isReal;
+            const message = isCorrect ? 
+                `Correct! (+${POINTS_PER_CORRECT} pts)` : 
+                `Wrong. The word **${currentItem.word}** is a ${currentItem.isReal ? 'Real Word' : 'Fake Word'}.`;
+
+            showFeedback(isCorrect, message);
+
+            if (isCorrect) {
+                window.currentScore += POINTS_PER_CORRECT;
+                playSound('correct');
+            } else {
+                playSound('wrong');
+                window.currentMistakes.push({
+                    word: currentItem.word,
+                    isReal: currentItem.isReal,
+                    definition: currentItem.definition,
+                    example: currentItem.example,
+                    wasTimeout: false
+                });
+            }
+
+            // Disable buttons to prevent multiple clicks
+            document.getElementById('real-button').disabled = true;
+            document.getElementById('fake-button').disabled = true;
+
+            // Advance to next question after scoring is handled in the feedback button click
+        }
+
+        function showFeedback(isCorrect, message) {
+            const footer = document.getElementById('feedback-footer');
+            const footerMsg = document.getElementById('footer-message');
+            const nextButton = footer.querySelector('.btn');
+            
+            footer.className = '';
+            footer.classList.add('visible', isCorrect ? 'feedback-correct' : 'feedback-wrong');
+            
+            footerMsg.innerHTML = message;
+            
+            // If wrong, show definition panel
+            if (!isCorrect && currentItem.isReal) {
+                const definition = currentItem.definition || "Definition not available.";
+                const example = currentItem.example || "Example not available.";
+
+                footerMsg.innerHTML += `
+                    <div class="definition-panel">
+                        <strong>Definition:</strong> ${definition} <br>
+                        <em>Example:</em> ${example}
+                    </div>
+                `;
+            }
+
+            nextButton.textContent = (window.currentQuestionIndex + 1 >= QUIZ_LENGTH) ? 'Finish Season' : 'Next Question';
+            
+            // Advance index here after showing feedback, so next question button triggers next item
+            if (document.getElementById('real-button').disabled || document.getElementById('fake-button').disabled) {
+                window.currentQuestionIndex++; 
+            }
+        }
+
+        function showSummaryScreen() {
+            stopTimer();
+            // Hide quiz and footer
+            document.getElementById('quiz-container').style.display = 'none';
+            document.getElementById('feedback-footer').classList.remove('visible');
+
+            // Show summary
+            const summaryContainer = document.getElementById('summary-container');
+            summaryContainer.style.display = 'block';
+            
+            const correctCount = QUIZ_LENGTH - window.currentMistakes.length;
+            document.getElementById('correct-count').textContent = correctCount;
+            document.getElementById('final-score').textContent = window.currentScore;
+            
+            // Check if review button should be enabled
+            document.getElementById('review-button').disabled = window.currentMistakes.length === 0;
+
+            // Save the score
+            window.saveScoreHistory('Vocabulary', window.currentScore);
+        }
+        
+        function showReviewScreen() {
+            document.getElementById('summary-container').style.display = 'none';
+            const reviewContainer = document.getElementById('review-mistakes-container');
+            const mistakesList = document.getElementById('mistakes-list');
+            
+            mistakesList.innerHTML = ''; // Clear previous list
+
+            window.currentMistakes.forEach(mistake => {
+                const listItem = document.createElement('li');
+                listItem.className = 'review-item';
+                
+                const type = mistake.wasTimeout ? 'Timeout' : 'Incorrect';
+                
+                let detail = `Correct Answer: ${mistake.isReal ? 'Real Word' : 'Fake Word'}.`;
+                if (mistake.isReal) {
+                    detail += `<br>Definition: ${mistake.definition}`;
+                }
+
+                listItem.innerHTML = `
+                    <strong>${mistake.word}</strong>
+                    <em>(${type}) ${detail}</em>
+                `;
+                mistakesList.appendChild(listItem);
+            });
+
+            reviewContainer.style.display = 'block';
+        }
+        
+        // Function to go back from review to summary
+        function showSummaryScreen() {
+             document.getElementById('review-mistakes-container').style.display = 'none';
+             document.getElementById('summary-container').style.display = 'block';
+        }
+    </script>
+</body>
+</html>
