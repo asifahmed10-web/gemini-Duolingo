@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Duolingo Practice Hub</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Load script.js in the head with 'defer' to ensure it executes before the DOMContentLoaded event, 
+         but after the DOM is fully parsed, which fixes the ReferenceError. -->
+    <script src="script.js" defer></script>
+</head>
+<body onload="setupDarkMode()">
+    <header class="header-bar">
+        <h1 style="color: var(--color-duo-green); font-size: 1.8rem; margin: 0;">DET Practice</h1>
+        <button id="dark-mode-toggle" class="dark-mode-toggle" aria-label="Toggle Dark Mode">&#9790;</button>
+    </header>
+    
+    <div class="container">
+        <div class="card">
+            <h1>Welcome! Choose Your Practice</h1>
+            <p style="color: var(--color-secondary-text); margin-bottom: 30px;">Select a mode, then choose a difficulty level to start a 20-question season.</p>
+
+            <!-- Difficulty Selector for Vocab -->
+            <h2 style="font-size: 1.5rem; color: var(--color-duo-blue); margin-top: 20px;">Vocabulary Practice (Yes/No)</h2>
+            <p style="font-size: 0.9rem; color: var(--color-secondary-text); margin-top: -15px; margin-bottom: 20px;">Time Limit: 6 seconds per question</p>
+
+            <button class="btn" onclick="startPractice('vocab', 'Beginner')">Beginner Words</button>
+            <button class="btn btn-secondary" onclick="startPractice('vocab', 'Intermediate')">Intermediate Words</button>
+            <button class="btn btn-red" onclick="startPractice('vocab', 'Advanced')">Advanced Words</button>
+            
+            <hr style="border: none; border-top: 1px solid var(--color-border); margin: 30px 0;">
+
+            <!-- Difficulty Selector for Fill-in-the-Blanks -->
+            <h2 style="font-size: 1.5rem; color: var(--color-duo-blue); margin-top: 20px;">Fill in the Blanks</h2>
+            <p style="font-size: 0.9rem; color: var(--color-secondary-text); margin-top: -15px; margin-bottom: 20px;">Time Limit: 30 seconds per question</p>
+
+            <button class="btn" onclick="startPractice('fill', 'Beginner')">Easy Blanks</button>
+            <button class="btn btn-secondary" onclick="startPractice('fill', 'Intermediate')">Mixed Blanks</button>
+            <button class="btn btn-red" onclick="startPractice('fill', 'Advanced')">Difficult Blanks</button>
+            
+            <hr style="border: none; border-top: 1px solid var(--color-border); margin: 30px 0;">
+            
+            <button class="btn btn-secondary" style="margin-top: 20px;" onclick="downloadData()">Download Datasets</button>
+            <p style="font-size: 0.8rem; color: var(--color-secondary-text); margin-top: 10px;">(First load may take a few seconds to generate 8000+ words.)</p>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // Ensure datasets are ready before allowing navigation
+            // This is now safe because script.js is loaded with 'defer'
+            if (window.appData) {
+                window.appData.ensureDatasetsReady();
+            } else {
+                 console.error("appData not found. script.js might not have loaded correctly.");
+            }
+        });
+
+        function startPractice(mode, difficulty) {
+            // Store selected difficulty for the practice page to use
+            localStorage.setItem('selectedDifficulty', difficulty);
+            
+            // Navigate to the correct practice page
+            if (mode === 'vocab') {
+                window.location.href = `vocab.html`;
+            } else if (mode === 'fill') {
+                window.location.href = `fill.html`;
+            }
+        }
+        
+        function downloadData() {
+            if (window.appData) {
+                window.appData.downloadDatasets();
+            }
+        }
+    </script>
+</body>
+</html>
