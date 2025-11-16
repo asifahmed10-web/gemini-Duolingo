@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fill-in-the-Blanks Practice</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="script.js" defer></script>
+</head>
+<body onload="setupDarkMode()">
+    <header class="header-bar">
+        <a href="index.html" style="text-decoration: none; color: var(--color-secondary-text); font-weight: 600;">&leftarrow; Home</a>
+        <div id="timer-display" class="timer-display">30s</div>
+        <button id="dark-mode-toggle" class="dark-mode-toggle" aria-label="Toggle Dark Mode">&#9790;</button>
+    </header>
+
+    <div class="container">
+        <div id="quiz-container">
+            <div class="progress-container">
+                <div id="progress-bar" class="progress-bar"></div>
+            </div>
+
+            <div class="score-display" id="score-display">Score: 0 | Q: 0/20</div>
+            <div class="card">
+                <div class="question-prompt">Type the word that best fits the blank space.</div>
+                <div class="main-content-box">
+                    <div id="sentence-display" class="blank-sentence">...Loading...</div>
+                </div>
+                <input type="text" id="answer-input" class="blank-input" placeholder="Your Answer" onkeydown="handleKey(event)">
+            </div>
+            
+            <button class="btn" id="submit-button" onclick="submitAnswer()">Submit Answer</button>
+        </div>
+
+        <!-- Score/Review Screen (Hidden by default) -->
+        <div id="summary-container" class="card score-summary" style="display: none;">
+            <h2>Season Complete!</h2>
+            <p>You finished the **<span id="summary-difficulty"></span>** Fill-in-the-Blanks Season.</p>
+            <p>Correct Answers: <span id="correct-count"></span> / 20</p>
+            <p>Total Points:</p>
+            <div class="final-score" id="final-score"></div>
+            
+            <hr style="border: none; border-top: 1px solid var(--color-border); margin: 30px 0;">
+            
+            <button class="btn btn-red" id="review-button" onclick="showReviewScreen()">Review Mistakes</button>
+            <button class="btn btn-secondary" style="margin-top: 15px;" onclick="window.location.href='index.html'">Start New Season</button>
+        </div>
+        
+        <!-- Mistakes Review Screen (Hidden by default) -->
+        <div id="review-mistakes-container" class="card" style="display: none;">
+            <h2>Mistake Review</h2>
+            <p style="color: var(--color-duo-red);">Sentences you struggled with. Practice these answers!</p>
+            <ul id="mistakes-list" class="review-list">
+                <!-- Mistake items will be injected here -->
+            </ul>
+            <button class="btn" onclick="showSummaryScreen()">Back to Summary</button>
+            <button class="btn btn-secondary" style="margin-top: 15px;" onclick="window.location.href='index.html'">Start New Season</button>
+        </div>
+    </div>
+    
+    <!-- Feedback Footer -->
+    <div id="feedback-footer">
+        <div class="feedback-content">
+            <div class="feedback-message" id="footer-message"></div>
+            <button class="btn" style="width: auto; padding: 10px 20px;" onclick="loadNextQuestion()">Next</button>
+        </div>
+    </div>
+
+    <script>
+        let currentItem = null;
+        const difficulty = localStorage.getItem('selectedDifficulty') || 'Beginner';
+        let questionActive = false;
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            if (!window.appData) { console.error("Data script not loaded."); return; }
+            window.resetState();
+            setupQuiz();
+        });
+
+        function setupQuiz() {
+            // 1. Filter and Shuffle Dataset
+            const allBlanks = window.appData.getBlanksArray();
+            const filtered = allBlanks.filter(item => item.difficulty === difficulty);
+            
+            // Use the shuffled array, taking only the first QUIZ_LENGTH items
+            window.currentQuizArray = window.appData.shuffle(filtered).slice(0, QUIZ_LENGTH);
+            if (window.currentQuizArray.length === 0) {
+                 console.error("Error: No blanks found for this difficulty. Please try a different level or regenerate data on the home page.");
+                 return;
+            }
+            
+            document.getElementById('summary-difficulty').textContent = difficulty;
+            loadNextQuestion();
+        }
+        
+        function loadNextQuestion() {
+            if (window.currentQuestionIndex >= QUIZ_LENGTH) {
+                showSummaryScreen();
+                return;
+            }
+            
+            window.stopTimer();
+            questionActive = true;
+            
+            // Hide Feedback Footer
+            document.getElementById('feedback-footer').classList.remove('visible');
+            
+            // Enable and clear input/button
+            const input = document.getElementById('answer-input');
+            const submitButton = document.getElementById('submit-button');
+            input.value = '';
+            input.disabled = false;
+            submitButton.disabled = false;
+            submitButton.textContent = 'Submit Answer';
+            input.focus();
+            
+            // Load next item
+            currentItem = window.currentQuizArray[window.currentQuestionIndex];
+            const sentenceWithBlank = currentItem.sentence.replace('***', '____');
+            document.getElementById('sentence-display').textContent = sentenceWithBlank;
+            
+            updateProgressBar();
+            updateScoreDisplay();
+            
+            // Start timer for the new question
+            window.startTimer(BLANKS_TIMER, () => {
+                // Timeout function
+                if (questionActive) { // Only run if question hasn't been answered
+                    showFeedback(false, `Time's up! The correct word was: **${currentItem.answer}**`);
+                    window.playSound('timeout');
+                    window.currentMistakes.push({
+                        sentence: sentenceWithBlank,
+                        correctAnswer: currentItem.answer,
+                        userAnswer: '',
+                        wasTimeout: true
+                    });
+                    
+                    // Disable input/button after timeout
+                    input.disabled = true;
+                    submitButton.disabled = true;
+                    
+                    // Auto-advance after a timeout pause
+                    window.currentQuestionIndex++; 
+                    setTimeout(loadNextQuestion, 1500); 
+                }
+            });
+        }
+        
+        function handleKey(event) {
+            if (event.keyCode === KEY_ENTER) {
+                event.preventDefault(); // Prevent default form submit action
+                submitAnswer();
+            }
+        }
+
+        function submitAnswer() {
+            if (!questionActive) return;
+
+            window.stopTimer();
+            questionActive = false; // Question is now inactive
+            
+            const input = document.getElementById('answer-input');
+            const submitButton = document.getElementById('submit-button');
+            const userAnswer = input.value.trim();
+            const correctAnswer = currentItem.answer.trim();
+            
+            const isCorrect = userAnswer.toLowerCase() === correctAnswer.toLowerCase();
+            const message = isCorrect ? 
+                `Correct! The word was **${correctAnswer}**. (+${POINTS_PER_CORRECT} pts)` : 
+                `Wrong. You wrote "${userAnswer}". The correct word was: **${correctAnswer}**`;
+
+            showFeedback(isCorrect, message);
+
+            if (isCorrect) {
+                window.currentScore += POINTS_PER_CORRECT;
+                window.playSound('correct');
+            } else {
+                window.playSound('wrong');
+                window.currentMistakes.push({
+                    sentence: document.getElementById('sentence-display').textContent,
+                    correctAnswer: correctAnswer,
+                    userAnswer: userAnswer,
+                    wasTimeout: false
+                });
+            }
+
+            // Disable input and button
+            input.disabled = true;
+            submitButton.disabled = true;
+
+            // Advance to next question after scoring is handled in the feedback button click
+        }
+
+        function showFeedback(isCorrect, message) {
+            const footer = document.getElementById('feedback-footer');
+            const footerMsg = document.getElementById('footer-message');
+            const nextButton = footer.querySelector('.btn');
+            
+            footer.className = '';
+            footer.classList.add('visible', isCorrect ? 'feedback-correct' : 'feedback-wrong');
+            
+            footerMsg.innerHTML = message.replace(/\*\*\s*(.*?)\s*\*\*/g, '<strong>$1</strong>');
+            nextButton.textContent = (window.currentQuestionIndex + 1 >= QUIZ_LENGTH) ? 'Finish Season' : 'Next Question';
+            
+            // Advance index here after showing feedback
+            if (document.getElementById('answer-input').disabled) {
+                window.currentQuestionIndex++;
+            }
+        }
+
+
+        function showSummaryScreen() {
+            window.stopTimer();
+            // Hide quiz and footer
+            document.getElementById('quiz-container').style.display = 'none';
+            document.getElementById('feedback-footer').classList.remove('visible');
+
+            // Show summary
+            const summaryContainer = document.getElementById('summary-container');
+            summaryContainer.style.display = 'block';
+            
+            const correctCount = QUIZ_LENGTH - window.currentMistakes.length;
+            document.getElementById('correct-count').textContent = correctCount;
+            document.getElementById('final-score').textContent = window.currentScore;
+            
+            // Check if review button should be enabled
+            document.getElementById('review-button').disabled = window.currentMistakes.length === 0;
+
+            // Save the score
+            window.saveScoreHistory('Fill-in-Blanks', window.currentScore);
+        }
+        
+        function showReviewScreen() {
+            document.getElementById('summary-container').style.display = 'none';
+            const reviewContainer = document.getElementById('review-mistakes-container');
+            const mistakesList = document.getElementById('mistakes-list');
+            
+            mistakesList.innerHTML = ''; // Clear previous list
+
+            window.currentMistakes.forEach(mistake => {
+                const listItem = document.createElement('li');
+                listItem.className = 'review-item';
+                
+                const type = mistake.wasTimeout ? 'Timeout' : 'Incorrect';
+                
+                let detail = `Correct Answer: <strong>${mistake.correctAnswer}</strong>.`;
+                if (!mistake.wasTimeout) {
+                    detail += ` Your Answer: <em>${mistake.userAnswer}</em>`;
+                }
+
+                listItem.innerHTML = `
+                    <strong>${mistake.sentence.replace('____', '<u>____</u>')}</strong>
+                    <em>(${type}) ${detail}</em>
+                `;
+                mistakesList.appendChild(listItem);
+            });
+
+            reviewContainer.style.display = 'block';
+        }
+        
+        // Function to go back from review to summary
+        function showSummaryScreen() {
+             document.getElementById('review-mistakes-container').style.display = 'none';
+             document.getElementById('summary-container').style.display = 'block';
+        }
+    </script>
+</body>
+</html>
